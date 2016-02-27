@@ -1,0 +1,17 @@
+-r requirements.txt
+
+pytest-cov
+pytest-xdist
+mock
+
+pylint
+autopep8
+flake8
+
+tox
+yapf
+
+pep8
+wheel
+
+sphinx
