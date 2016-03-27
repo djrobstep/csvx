@@ -52,7 +52,6 @@ def smart_open(f):
 
 
 def smart_openw(f):
-    "Hi"
     try:
         if not six.PY2:
             return io.open(f, 'w', newline='')  # pragma: no cover
