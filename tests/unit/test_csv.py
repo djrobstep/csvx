@@ -1,7 +1,16 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from csvx import Reader, OrderedDictReader, Writer, DictWriter, to_text
+from csvx import Reader, OrderedDictReader, Writer, DictWriter, \
+    to_text, ordereddicts_from_text, text_from_dicts, sniff_text
+
+from collections import OrderedDict
+import io
+
+
+def unicode_tuple(t):
+    return tuple(to_text(x) for x in t)
+
 
 COL_NAMES = ('id', b'account', b'active', 'start_time', 'end_time', 'amount',
              'credit_limit', 'deposited', 'des\u00e7ription')
@@ -13,40 +22,52 @@ FIRST_ROW = (490, 248, 'False', '2012-10-01 00:00:00.000000',
 SECOND_ROW = (490, 248.0, b'False', b'-infinity', '', 72000000, 216000000,
               72000000, 'Fran\u00e7ois')
 
+COL_NAMES_U = unicode_tuple(COL_NAMES)
+FIRST_ROW_U = unicode_tuple(FIRST_ROW)
+SECOND_ROW_U = unicode_tuple(SECOND_ROW)
+
+ROWS_FOR_WRITING = [COL_NAMES, FIRST_ROW, SECOND_ROW]
+
+ALL_ROW_TUPLES = [COL_NAMES_U, FIRST_ROW_U, SECOND_ROW_U]
+ROW_TUPLES = [FIRST_ROW_U, SECOND_ROW_U]
+ROW_ODS = [OrderedDict(zip(COL_NAMES_U, row)) for row in ROW_TUPLES]
+
 
 def test_csv(tmpdir):
     csvout = tmpdir / 'test.csv'
+    path = str(csvout)
 
-    with Writer(str(csvout)) as out:
-        out.write_rows([COL_NAMES, FIRST_ROW, SECOND_ROW])
+    with Writer(path) as w:
+        w.write_rows(ROWS_FOR_WRITING)
 
-    with Reader(str(csvout)) as csvin:
-        rows = list(csvin)
-        assert rows[1] == tuple(to_text(x) for x in FIRST_ROW)
-        assert len(rows) == 3
+    with Reader(path) as r:
+        assert list(r) == ALL_ROW_TUPLES
 
-    with Reader(csvout.open()) as csvin:
-        rows = list(csvin)
-        assert rows[1] == tuple(to_text(x) for x in FIRST_ROW)
-        assert len(rows) == 3
+    with Reader(io.open(path)) as r:
+        assert list(r) == ALL_ROW_TUPLES
 
-    with OrderedDictReader(str(csvout)) as csvin:
-        rows = list(csvin)
-        assert csvin.fieldnames == tuple(to_text(x) for x in COL_NAMES)
-        assert len(rows) == 2
+    with OrderedDictReader(path) as odr:
+        assert odr.fieldnames == COL_NAMES_U
+        assert list(odr) == ROW_ODS
 
-    with OrderedDictReader(csvout.open()) as csvin:
-        rows = list(csvin)
-        assert csvin.fieldnames == tuple(to_text(x) for x in COL_NAMES)
+    with DictWriter(path) as dw:
+        dw.write_dicts(ROW_ODS)
 
-    with DictWriter(str(csvout)) as out:
-        rows = [dict(zip(COL_NAMES, row)) for row in [FIRST_ROW, SECOND_ROW]]
-        out.write_dicts(rows)
+    with DictWriter(io.open(path, 'w'), fieldnames=COL_NAMES) as dw:
+        dw.write_dicts(ROW_ODS)
 
-    with DictWriter(csvout.open('w'), fieldnames=COL_NAMES) as out:
-        rows = [dict(zip(COL_NAMES, row)) for row in [FIRST_ROW, SECOND_ROW]]
-        out.write_dicts(rows)
+    with OrderedDictReader(io.open(path)) as odr:
+        assert odr.fieldnames == COL_NAMES_U
+        assert list(odr) == ROW_ODS
 
-    with OrderedDictReader(str(csvout), fieldnames=COL_NAMES) as csvin:
-        rows = list(csvin)
-        assert csvin.fieldnames == tuple(to_text(x) for x in COL_NAMES)
+    # test non context usage
+    w = OrderedDictReader(path)
+    assert list(w) == ROW_ODS
+    w.close()
+
+    # test convenience methods
+    t = text_from_dicts(ROW_ODS)
+    assert list(ordereddicts_from_text(t)) == ROW_ODS
+
+    sniffed = sniff_text(t)
+    assert sniffed.delimiter == ','

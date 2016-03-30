@@ -43,30 +43,30 @@ else:
 
 def smart_open(f):
     try:
-        if not six.PY2:
-            return io.open(f, 'r', newline='')  # pragma: no cover
-        else:
-            return io.open(f, 'rb')  # pragma: no cover
+        return io.open(f)
     except TypeError:
         return f
 
 
 def smart_openw(f):
     try:
-        if not six.PY2:
-            return io.open(f, 'w', newline='')  # pragma: no cover
-        else:
-            return io.open(f, 'wb')  # pragma: no cover
+        return io.open(f, 'w')
     except TypeError:
         return f
 
 
-def dictreader_from_fp(fp, dialect, **kwargs):
-    return csv.DictReader(fp, dialect=dialect, **kwargs)
-
-
-def reader_from_fp(fp, dialect, **kwargs):
-    return csv.reader(fp, dialect=dialect, **kwargs)
+if six.PY2:
+    from .python2 import TextReader, TextDictReader, \
+                        TextWriter, TextDictWriter
+    writer = TextWriter
+    reader = TextReader
+    dictreader = TextDictReader
+    dictwriter = TextDictWriter
+else:
+    writer = csv.writer
+    reader = csv.reader
+    dictreader = csv.DictReader
+    dictwriter = csv.DictWriter
 
 
 class Reader(object):
@@ -82,23 +82,25 @@ class Reader(object):
         kw (kwargs): Additional arguments, passed through to the constructor of
             the stdlib reader object used under the hood.
     """
+
     def __init__(self, f, dialect=csv.excel, **kw):
         self.f = f
         self.dialect = dialect
-        # self.encoding = encoding
         self.kw = kw
+        self.f = smart_open(self.f)
+        self.reader = reader(self.f, self.dialect, **self.kw)
 
     def __enter__(self):
-        self.f = smart_open(self.f)
-        self.reader = reader_from_fp(self.f, self.dialect, **self.kw)
         return self
 
     def __exit__(self, type, value, traceback):
+        self.close()
+
+    def close(self):
         self.f.close()
 
     def next(self):
-        row = next(self.reader)
-        return tuple([to_text(s) for s in row])
+        return tuple(next(self.reader))
 
     __next__ = next
 
@@ -116,30 +118,27 @@ class OrderedDictReader(object):
     def __init__(self, f, dialect=csv.excel, **kw):
         self.f = f
         self.dialect = dialect
-        # self.encoding = encoding
         self.kw = kw
 
-    def __enter__(self):
         self.f = smart_open(self.f)
 
-        self.reader = self.reader = dictreader_from_fp(self.f, self.dialect,
-                                                       **self.kw)
-        self._fieldnames = self.reader.fieldnames
+        b = dictreader(self.f, dialect=self.dialect, **self.kw)
+        self.reader = b
+        self.fieldnames = tuple(self.reader.fieldnames)
+
+    def __enter__(self):
         return self
 
-    @property
-    def fieldnames(self):
-        """The field names as specified in the first row of the csv file.
-        """
-        return tuple(to_text(fn) for fn in self._fieldnames)
-
     def __exit__(self, type, value, traceback):
+        self.close()
+
+    def close(self):
         self.f.close()
 
     def next(self):
         d = next(self.reader)
-        return OrderedDict((to_text(k), to_text(d[k]))
-                           for k in self._fieldnames)
+        tups = [(k, d[k]) for k in self.fieldnames]
+        return OrderedDict(tups)
 
     __next__ = next
 
@@ -148,9 +147,9 @@ class OrderedDictReader(object):
 
 
 class Writer(object):
-    """A context manager that lets you write rows to a csv file by specifying
-    each row as a tuple (or, in fact, any iterable of the correct length
-    containing string contents).
+    """A context manager that lets you write rows to a csv file by
+    specifying each row as a tuple (or, in fact, any iterable of the
+    correct length containing string contents).
 
     Args are the same as for the reader classes.
 
@@ -158,31 +157,41 @@ class Writer(object):
     (and text mode). If you're passing in a file name, this file will be
     *truncated* and then written to (as per normal 'w' mode behaviour).
     """
+
     def __init__(self, f, dialect=csv.excel, **kw):
         self.f = f
         self.dialect = dialect
         self.kw = kw
         self.row_count = 0
 
-    def __enter__(self):
         self.f = smart_openw(self.f)
-        self.writer = csv.writer(self.f, dialect=self.dialect, **self.kw)
+
+        self.writer = writer(self.f, dialect=self.dialect, **self.kw)
+
+    def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
+        self.close()
+
+    def close(self):
         self.f.flush()
         self.f.close()
 
     def write_row(self, row):
         """Write a row to the csv file. Row should be a tuple (or any
-        iterable) containing the values as strings. Eg: ('a', 'b', '10')
+        iterable) containing the values, preferably as text. Non-text
+        values will be converted to text with the `unicode` method
+        (byte sequences are assumed to be utf-8). For instance:
+        ('text', b'bytes', 10) will become ('text', 'bytes', '10').
         """
-        r = [to_str(s) for s in row]
+        r = [to_text(s) for s in row]
         self.writer.writerow(r)
         self.row_count += 1
 
     def write_rows(self, rows):
-        """Write multiple rows at once. For only the most advanced of users!
+        """Write multiple rows at once. For only the most advanced
+        of users!
         """
         for row in rows:
             self.write_row(row)
@@ -195,63 +204,58 @@ class DictWriter(object):
     Same args as for writer, with the addition of:
 
     Args:
-        fieldnames: You can specify fieldnames explicitly here if you want. If
-            you skip this, the writer will use the keys of the first dictionary
-            you write as the field names. That's why it's a good idea to use
-            OrderedDict-style ordered dictionaries to write to this, as then
-            you can skip the tiresome step of specifying the fieldnames
-            explicitly here.
+        fieldnames: You can specify fieldnames explicitly here if
+            you want. If you skip this, the writer will use the keys
+            of the first dictionary you write as the field names. That's
+            why it's a good idea to use OrderedDict-style ordered
+            dictionaries to write to this, as then you can skip the
+            tiresome step of specifying the fieldnames explicitly here.
     """
-    def __init__(self, f, dialect=csv.excel, fieldnames=None, **kw):
 
-        self.f = f
-        self.dialect = dialect
+    def __init__(self, f, **kw):
+        self.f = smart_openw(f)
         self.kw = kw
         self._initialized = False
         self.row_count = 0
 
-        if fieldnames:
-            self.initialize(fieldnames)
+        if 'fieldnames' in kw:
+            self.initialize()
 
     def __enter__(self):
-        self.f = smart_openw(self.f)
         return self
 
-    @property
-    def fieldnames(self):
-        """Returns the fieldnames used in this csv file.
-        """
-        return tuple(to_str(fn) for fn in self._fieldnames)
-
-    def initialize(self, fieldnames):
-        self._fieldnames = fieldnames
-
-        self.writer = csv.DictWriter(self.f,
-                                     self.fieldnames,
-                                     dialect=self.dialect,
-                                     **self.kw)
+    def initialize(self):
+        fieldnames = self.kw['fieldnames']
+        self.fieldnames = tuple(to_text(fn) for fn in fieldnames)
+        self.kw['fieldnames'] = self.fieldnames
+        self.writer = dictwriter(self.f, **self.kw)
         self.writer.writeheader()
         self._initialized = True
 
     def __exit__(self, type, value, traceback):
+        self.close()
+
+    def close(self):
         self.f.flush()
         self.f.close()
 
     def write_dict(self, d):
         """Write a row to the csv file. Should be specified as a
-        dictionary/mapping, eg: {'name': 'Fred', 'age': 23 }.
+        dictionary/mapping, eg: { 'name': 'Fred', 'age': 23 }.
 
-        If you didn't specify fieldnames in the constructor, the keys() of the
-        first dict you write will be used as the field names.
+        If you didn't specify fieldnames in the constructor, the keys()
+        of the first dict you write will be used as the field names.
 
         So make sure to either specify the field names explicitly, or use
         OrderedDict dictionaries with this method to guarantee predictable
         ordering.
         """
-        if not self._initialized:
-            self.initialize(d.keys())
 
-        d = {to_str(k): to_str(v) for k, v in d.items()}
+        if not self._initialized:
+            self.kw[to_str('fieldnames')] = d.keys()
+            self.initialize()
+
+        d = {to_text(k): to_text(v) for k, v in d.items()}
         self.writer.writerow(d)
         self.row_count += 1
 
@@ -261,3 +265,34 @@ class DictWriter(object):
         """
         for row in rows:
             self.write_dict(row)
+
+
+def ordereddicts_from_text(t):
+    """Convenience method. Got some csv text? Get some dicts.
+    """
+    t = to_text(t)
+    s = io.StringIO(t)
+
+    with OrderedDictReader(s) as odr:
+        for od in odr:
+            yield od
+
+
+def text_from_dicts(iterable_of_dicts):
+    """Convenience method, the inverse of
+    ordereddicts_from_text (sorta).
+    """
+    s = io.StringIO()
+
+    with DictWriter(s) as w:
+        w.write_dicts(iterable_of_dicts)
+        return s.getvalue()
+
+
+def sniff_text(text):
+    """Sniff some csv text to determine format. Returns a Dialect object
+    as per the stdlib csv module.
+    """
+    sniffer = csv.Sniffer()
+    sniffed = sniffer.sniff(text)
+    return sniffed
