@@ -12,6 +12,9 @@ if not six.PY2:
 
 
 def to_text(x):  # pragma: no cover
+    if x is None:
+        return x
+
     if isinstance(x, six.text_type):
         return x
 
@@ -71,7 +74,7 @@ else:
 
 class Reader(object):
     """A context manager that helps you read a csv file by iterating over the
-    rows as tuples.
+    rows in one-list-per-row fashion.
 
     Args:
         f (filename or file-like object): The path of the file, or an already
@@ -100,7 +103,7 @@ class Reader(object):
         self.f.close()
 
     def next(self):
-        return tuple(next(self.reader))
+        return list(next(self.reader))
 
     __next__ = next
 
@@ -124,7 +127,7 @@ class OrderedDictReader(object):
 
         b = dictreader(self.f, dialect=self.dialect, **self.kw)
         self.reader = b
-        self.fieldnames = tuple(self.reader.fieldnames)
+        self.fieldnames = list(self.reader.fieldnames)
 
     def __enter__(self):
         return self
@@ -138,7 +141,11 @@ class OrderedDictReader(object):
     def next(self):
         d = next(self.reader)
         tups = [(k, d[k]) for k in self.fieldnames]
-        return OrderedDict(tups)
+
+        od = OrderedDict(tups)
+        if None in d:
+            od[None] = d[None]
+        return od
 
     __next__ = next
 
@@ -148,8 +155,8 @@ class OrderedDictReader(object):
 
 class Writer(object):
     """A context manager that lets you write rows to a csv file by
-    specifying each row as a tuple (or, in fact, any iterable of the
-    correct length containing string contents).
+    specifying each row as a list/tuple (or any iterable of the right length
+    really).
 
     Args are the same as for the reader classes.
 
@@ -226,7 +233,7 @@ class DictWriter(object):
 
     def initialize(self):
         fieldnames = self.kw['fieldnames']
-        self.fieldnames = tuple(to_text(fn) for fn in fieldnames)
+        self.fieldnames = list(to_text(fn) for fn in fieldnames)
         self.kw['fieldnames'] = self.fieldnames
         self.writer = dictwriter(self.f, **self.kw)
         self.writer.writeheader()

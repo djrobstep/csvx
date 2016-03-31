@@ -5,6 +5,18 @@ import io
 import csv
 
 
+def decode(x):
+    if x is None:
+        return x
+    return x.decode('utf-8')
+
+
+def encode(x):
+    if x is None:
+        return x
+    return x.encode('utf-8')
+
+
 class UTF8Recoder(object):
     """
     Iterator that reads a text stream and reencodes the input to UTF-8
@@ -33,7 +45,7 @@ class TextReader(object):
 
     def next(self):
         row = self.reader.next()
-        return tuple(r.decode('utf-8') for r in row)
+        return list(r.decode('utf-8') for r in row)
 
     __next__ = next
 
@@ -50,12 +62,21 @@ class TextDictReader(object):
         f = UTF8Recoder(f)
         self.reader = csv.DictReader(f, dialect=dialect, **kwds)
         self.fieldnames = self.reader.fieldnames
-        self.fieldnames = tuple(r.decode('utf-8')
-                                for r in self.reader.fieldnames)
+        self.fieldnames = list(r.decode('utf-8')
+                               for r in self.reader.fieldnames)
 
     def next(self):
         row = self.reader.next()
-        return {k.decode('utf-8'): v.decode('utf-8') for k, v in row.items()}
+
+        def decode_value(k, v):
+            if k is None:
+                return [x.decode('utf-8') for x in v]
+
+            if v is None:
+                return v
+            return v.decode('utf-8')
+
+        return {decode(k): decode_value(k, v) for k, v in row.items()}
 
     __next__ = next
 
@@ -107,7 +128,7 @@ class TextDictWriter(object):
         self.writer.writeheader()
 
     def writerow(self, row):
-        e = {k.encode('utf-8'): v.encode('utf-8') for k, v in row.items()}
+        e = {encode(k): encode(v) for k, v in row.items()}
         self.writer.writerow(e)
         # Fetch UTF-8 output from the queue ...
         data = self.queue.getvalue()

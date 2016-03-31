@@ -11,7 +11,7 @@ with open('README.rst') as f:
 
 setup(
     name='csvx',
-    version='0.1.1459310240',
+    version='0.1.1459403998',
     description='csvx: painless csv',
     long_description=readme,
     author='Robert Lechte',
