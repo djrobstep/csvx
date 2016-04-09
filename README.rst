@@ -1,6 +1,10 @@
 csvx: painless csv
 ==================
 
+.. image:: https://badges.gitter.im/djrobstep/csvx.svg
+   :alt: Join the chat at https://gitter.im/djrobstep/csvx
+   :target: https://gitter.im/djrobstep/csvx?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
+
 A csv library that supports 2 and 3, does the unicode thing properly, and lets you read rows as ordered dictionaries so that the ordering stays correct by default.
 
 Which makes things pretty easy.
