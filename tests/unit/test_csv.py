@@ -130,5 +130,4 @@ def test_csv(tmpdir):
     with DictWriter(csvx_out) as w:
         w.write_dicts(csvx_ordereddicts)
         csvx_out = csvx_out.getvalue()
-    print(stdlib_out)
     assert stdlib_out == csvx_out
